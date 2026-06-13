@@ -1,0 +1,68 @@
+{
+  "$comment": "RAHU — Dimension-style AI coworker, 100% Google ecosystem, no separate UI. Outputs land as Gmail drafts/labels, Calendar events, Google Tasks, and Google Docs. >>> REVIEW THIS FILE, then copy it to .claude/settings.json to activate. It is shipped as .example so nothing auto-grants permissions or registers hooks without your explicit opt-in. <<<",
+
+  "model": "claude-sonnet-4-6",
+
+  "$comment_model": "Default = Sonnet (good writing + reasoning). Per-task overrides live in each agent's frontmatter: Haiku for high-volume triage/extraction, Opus for deal/IC-memo deep reasoning. See README 'Model routing'.",
+
+  "mcpServers": {
+    "google-workspace": {
+      "$comment": "Open-source unified Google MCP (taylorwilsdon/google_workspace_mcp, PyPI: workspace-mcp). Covers Gmail, Calendar, Tasks, Drive, Docs in ONE server — this is the 'no separate UI / everything in Google' backbone. First run opens a Google OAuth consent screen.",
+      "command": "uvx",
+      "args": [
+        "workspace-mcp",
+        "--tools", "gmail", "calendar", "tasks", "drive", "docs"
+      ],
+      "env": {
+        "GOOGLE_OAUTH_CLIENT_ID": "${GOOGLE_OAUTH_CLIENT_ID}",
+        "GOOGLE_OAUTH_CLIENT_SECRET": "${GOOGLE_OAUTH_CLIENT_SECRET}",
+        "USER_GOOGLE_EMAIL": "${USER_GOOGLE_EMAIL}",
+        "WORKSPACE_MCP_DEFAULT_TIMEZONE": "Asia/Kolkata"
+      }
+    }
+  },
+
+  "$comment_alt_mcp": "Zero-setup alternative: the claude.ai-hosted Gmail / Google Calendar / Google Drive connectors need no OAuth app. They lack Google Tasks, so RAHU falls back to a Google Doc checklist when only the hosted connectors are present. Prefer the self-hosted server above for full Tasks support.",
+
+  "permissions": {
+    "allow": [
+      "Bash(python3 .claude/memory/store.py:*)",
+      "mcp__google-workspace__gmail_list_messages",
+      "mcp__google-workspace__gmail_get_message",
+      "mcp__google-workspace__gmail_modify_labels",
+      "mcp__google-workspace__gmail_create_draft",
+      "mcp__google-workspace__calendar_list_events",
+      "mcp__google-workspace__calendar_get_event",
+      "mcp__google-workspace__tasks_list",
+      "mcp__google-workspace__tasks_insert",
+      "mcp__google-workspace__docs_create",
+      "mcp__google-workspace__drive_search"
+    ],
+    "ask": [
+      "mcp__google-workspace__gmail_send_message",
+      "mcp__google-workspace__calendar_create_event"
+    ],
+    "deny": []
+  },
+  "$comment_permissions": "SAFETY POSTURE: RAHU drafts, labels, and prepares — it never sends mail or creates calendar invites without a human OK (those two are in 'ask'). This mirrors Dimension's review-and-send default. Flip gmail_send_message into 'allow' only if you knowingly opt into true Inbox-Autopilot auto-send.",
+
+  "hooks": {
+    "$comment_hooks": "Optional. Enable by copying into settings.json. SessionStart injects a compact memory digest so agents start context-aware for ~0 extra tokens. PreToolUse on send is a belt-and-suspenders guard.",
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/session-start-inject-memory.sh" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "mcp__google-workspace__gmail_send_message",
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/pre-send-guard.sh" }
+        ]
+      }
+    ]
+  }
+}
