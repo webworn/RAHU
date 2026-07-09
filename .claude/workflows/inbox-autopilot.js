@@ -16,12 +16,21 @@ const MSG_SCHEMA = {
   required: ['id', 'sender', 'subject', 'action'],
 }
 
-// The loop passes the high-water mark so each pass only handles genuinely new mail.
+// Overlapping /loop windows would re-surface the same mail every pass. Two guards keep
+// each message handled exactly once: (a) a per-user watermark in memory that triage
+// advances each pass, and (b) the RAHU "processed" label marker. Triage must return
+// ONLY genuinely-new messages so the draft phase never re-drafts an old thread.
 const SINCE = (args && args.since) || '2h'
 
 phase('Triage')
 const digest = await agent(
-  `Triage unread Gmail newer_than:${SINCE}. Label/prioritize each (email-triage skill) and assign an action: reply | task | fyi | ignore. Return {messages:[...]}.`,
+  `Triage unread Gmail newer_than:${SINCE}, but process each message exactly once across repeated autopilot passes:
+   1. Recall the watermark: python3 .claude/memory/store.py recall --kind pref --key autopilot:watermark --k 1
+   2. Consider ONLY messages newer than that watermark AND not already carrying the RAHU processed marker. Exclude everything already processed from the returned list.
+   3. Label/prioritize each new message (email-triage skill) and assign an action: reply | task | fyi | ignore.
+   4. After labeling, advance the watermark to the newest message's timestamp:
+      python3 .claude/memory/store.py add --kind pref --key autopilot:watermark --text "<epoch_or_ISO of newest processed message>"
+   Return {messages:[...]} containing ONLY the new-this-pass messages.`,
   { agentType: 'inbox-triage', label: 'triage', phase: 'Triage',
     schema: { type: 'object', properties: { messages: { type: 'array', items: MSG_SCHEMA } }, required: ['messages'] } }
 )
@@ -35,7 +44,7 @@ if (!msgs.length) return { processed: 0, drafted: 0, tasked: 0, note: 'inbox qui
 phase('Autopilot')
 const [drafts, tasks] = await parallel([
   () => parallel(toReply.map(m => () =>
-    agent(`Autopilot draft: reply in the user's voice to Gmail id ${m.id} ("${m.subject}" from ${m.sender}). Recall voice, save as a Gmail draft. Return {id, gist}.`,
+    agent(`Autopilot draft: reply in the user's voice to Gmail id ${m.id} ("${m.subject}" from ${m.sender}). FIRST check the thread doesn't already have a RAHU/unsent draft — if one exists, keep it and return {id, gist:"existing draft kept"} instead of creating a duplicate. Otherwise recall voice and save as a Gmail draft. Return {id, gist}.`,
       { agentType: 'voice-drafter', label: `draft:${m.sender}`, phase: 'Autopilot',
         schema: { type: 'object', properties: { id: { type: 'string' }, gist: { type: 'string' } }, required: ['id'] } }))),
   () => toTask.length

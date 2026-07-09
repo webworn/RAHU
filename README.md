@@ -19,13 +19,23 @@ cd RAHU
 claude
 ```
 
-### 2. Connect Gmail
-Inside Claude Code, run:
+### 2. Connect Google
+This repo ships a `.mcp.json`, so **Claude Code auto-detects the Google server the moment
+you open the folder** and asks you to approve it — just say yes. On first use your
+**browser opens** for a normal Google sign-in, then RAHU can read labels, draft, and
+write to Calendar / Tasks / Docs.
+
+One-time prerequisite (≈5 min): create a Google OAuth **desktop** client and export three
+values so the server can act as *you* — a self-hosted server needs your own credential,
+there's no way around it:
+```bash
+export GOOGLE_OAUTH_CLIENT_ID=...       # from Google Cloud Console → Credentials
+export GOOGLE_OAUTH_CLIENT_SECRET=...
+export USER_GOOGLE_EMAIL=you@your-domain.com
 ```
-/mcp
-```
-Pick **Gmail** from the list and press Enter. Your **browser opens** — sign in to Google
-and approve. Done. (Claude Code handles the connection; there are no keys or config to edit.)
+> **Just want a quick taste?** Run `/mcp` and pick the hosted **Gmail** connector instead —
+> zero setup, but it covers labeling + drafting only (no Tasks/Docs, so `/briefing` and
+> `/memo` are unavailable). The full experience uses the `.mcp.json` server above.
 
 ### 3. Teach it your inbox, then use it
 ```
@@ -84,13 +94,19 @@ memory/      store.py — your local, private learning store
 
 ---
 
-## Optional: always-on / full Google Workspace
+## Optional: permissions, hooks & always-on
 
-The Gmail connector in step 2 covers labeling, drafting, and briefings. If you also want
-**Google Tasks + Docs** and an unattended background setup, install the open-source
-[`workspace-mcp`](https://github.com/taylorwilsdon/google_workspace_mcp) server and copy
-`.claude/settings.example.json` → `.claude/settings.json` (review it first — it's shipped
-as `.example` so nothing activates without your OK). See that file's comments for details.
+The Google server itself is already wired via `.mcp.json` (step 2). To also **pre-approve
+the safe tool calls** (so RAHU stops asking on every label/draft), **inject your memory
+digest at session start**, and turn on the **send-safety latch**, review and copy the
+example settings:
+```bash
+cp .claude/settings.example.json .claude/settings.json   # read it first
+```
+It's shipped as `.example` on purpose — nothing grants permissions or registers hooks
+until you opt in. Once copied, keep it always-on with `/loop --interval 10m /label 15m`.
+The underlying server is the open-source
+[`workspace-mcp`](https://github.com/taylorwilsdon/google_workspace_mcp).
 
 ---
 

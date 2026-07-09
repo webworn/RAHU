@@ -58,7 +58,8 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "mcp__google-workspace__gmail_send_message",
+        "$comment": "Regex matcher (not an exact name) so the send-latch fires for ANY Gmail send tool — the self-hosted workspace-mcp (gmail_send_message) AND the claude.ai-hosted Gmail connector (send_email / *send*), which is named differently. Belt-and-suspenders on top of permissions.",
+        "matcher": "(?i)(gmail_send_message|Gmail.*send|send_email|send_message)",
         "hooks": [
           { "type": "command", "command": "bash .claude/hooks/pre-send-guard.sh" }
         ]

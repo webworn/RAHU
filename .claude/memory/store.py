@@ -56,7 +56,11 @@ DB_PATH = Path(__file__).with_name("memory.db")
 # --------------------------------------------------------------------------- #
 
 def _conn():
-    c = sqlite3.connect(DB_PATH)
+    # busy_timeout + WAL so the workflow fan-out (parallel()/pipeline() spawns many
+    # agents that each `store.py add` at once) doesn't hit "database is locked".
+    c = sqlite3.connect(DB_PATH, timeout=5.0)
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("PRAGMA busy_timeout=5000")
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS facts (
@@ -112,7 +116,12 @@ def _keyword_score(query, text):
 # commands
 # --------------------------------------------------------------------------- #
 
+MAX_FACT_CHARS = 2000  # facts are DISTILLED patterns, not raw email bodies — enforce it.
+
+
 def cmd_add(a):
+    if len(a.text) > MAX_FACT_CHARS:
+        a.text = a.text[: MAX_FACT_CHARS - 1].rstrip() + "…"
     emb = _embed(a.text) if a.kind in ("voice", "tagging", "contact", "deal", "thread") else None
     with _conn() as c:
         c.execute(
@@ -133,8 +142,7 @@ def cmd_add(a):
 def cmd_recall(a):
     with _conn() as c:
         rows = c.execute(
-            "SELECT id,kind,key,text,source,weight,updated,embedding FROM facts WHERE kind=?"
-            + ("" if a.kind else ""),
+            "SELECT id,kind,key,text,source,weight,updated,embedding FROM facts WHERE kind=?",
             (a.kind,),
         ).fetchall() if a.kind else c.execute(
             "SELECT id,kind,key,text,source,weight,updated,embedding FROM facts"
@@ -163,13 +171,18 @@ def cmd_recall(a):
     out, used = [], 0
     for _, r in scored[: a.k]:
         _id, kind, key, text, source, weight, updated, _ = r
+        budget = a.max_chars - used - len(key)
+        if budget <= 0:
+            break
+        # Hard cap: never let a single fat fact blow the budget — truncate the
+        # first/oversized fact to fit rather than emit it whole (the old `and out`
+        # let the first fact exceed max_chars unconditionally).
+        if len(text) > budget:
+            text = text[: max(0, budget - 1)].rstrip() + "…"
         chunk = {"id": _id, "kind": kind, "key": key, "text": text}
         if source:
             chunk["source"] = source
-        cost = len(text) + len(key)
-        if used + cost > a.max_chars and out:
-            break
-        used += cost
+        used += len(text) + len(key)
         out.append(chunk)
     print(json.dumps({"facts": out, "chars": used, "semantic": bool(qemb)}, ensure_ascii=False))
 
