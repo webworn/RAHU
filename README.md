@@ -126,6 +126,12 @@ The underlying server is the open-source
 
 ## Privacy
 
-RAHU runs on your machine through your own Claude Code. Your learned profile lives in a
-local file that's git-ignored. It stores distilled *patterns* (e.g. "mail from vendor X →
-label Purchase"), never raw email bodies, passwords, or one-time codes.
+RAHU runs on your machine through your own Claude Code. It stores distilled *patterns*
+(e.g. "mail from vendor X → label Purchase"), never raw email bodies, passwords, or
+one-time codes.
+
+**Your profile is yours, and it never ships.** Nothing learned is in this repo — a fresh
+clone contains the engine, not the knowledge, which is why *you* run `/learn` once (your
+labels aren't anyone else's). It lives outside the clone at **`~/.rahu/memory.db`**, so
+re-cloning, moving the folder, or `git clean -xdf` can't wipe it. Point it elsewhere — or
+share one profile across several clones — with `RAHU_MEMORY_DB=/path/to/memory.db`.

@@ -1,4 +1,7 @@
 # The learned profile is personal + may reflect private mail. Never commit it.
+# It now lives OUTSIDE the clone (~/.rahu/memory.db, or $RAHU_MEMORY_DB), so these
+# entries are a safety net: they cover pre-migration profiles and anyone who points
+# RAHU_MEMORY_DB back into the repo.
 # NOTE: WAL mode writes -wal/-shm sidecars that hold real data too — ignore all of them.
 memory.db
 memory.db-wal

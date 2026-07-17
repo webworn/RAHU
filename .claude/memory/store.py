@@ -13,7 +13,9 @@ retrieve K compact facts, not N raw emails.
 
 Design
 ------
-* Pure local. One SQLite file (`memory.db`). No server, no SaaS, no API key.
+* Pure local. One SQLite file, kept OUTSIDE the repo clone at `~/.rahu/memory.db`
+  (override: `RAHU_MEMORY_DB`) so a re-clone or `git clean` can't wipe a profile that
+  took real mail to build. No server, no SaaS, no API key.
 * Inspired by the open-source `supermemory` project (supermemoryai/supermemory)
   but reduced to a single file so it runs anywhere `python3` exists.
 * Semantic recall via `sentence-transformers` IF installed; otherwise a
@@ -50,13 +52,40 @@ import sys
 import time
 from pathlib import Path
 
-DB_PATH = Path(__file__).with_name("memory.db")
+def _db_path():
+    """Where the learned profile lives.
+
+    NOT inside the repo clone: the profile is expensive to build (/learn reads your
+    real mail) and must survive a re-clone, a moved folder, or `git clean -xdf`.
+    Override with RAHU_MEMORY_DB to relocate or to share one profile across clones.
+    """
+    env = os.environ.get("RAHU_MEMORY_DB")
+    return Path(env).expanduser() if env else Path.home() / ".rahu" / "memory.db"
+
+
+DB_PATH = _db_path()
+_LEGACY_DB = Path(__file__).with_name("memory.db")  # pre-2026-07 location, inside the clone
+
+
+def _migrate_legacy():
+    """One-time lift of a profile from the old in-clone location. Sidecars included —
+    WAL's -wal/-shm hold real data, so moving only the .db can lose recent writes."""
+    if DB_PATH.exists() or not _LEGACY_DB.exists():
+        return
+    import shutil
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    for suffix in ("", "-wal", "-shm"):
+        src = Path(str(_LEGACY_DB) + suffix)
+        if src.exists():
+            shutil.move(str(src), str(Path(str(DB_PATH) + suffix)))  # shutil: may cross devices
+    print(f"[rahu] moved your learned profile out of the repo → {DB_PATH}", file=sys.stderr)
 
 # --------------------------------------------------------------------------- #
 # storage
 # --------------------------------------------------------------------------- #
 
 def _conn():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     # busy_timeout + WAL so the workflow fan-out (parallel()/pipeline() spawns many
     # agents that each `store.py add` at once) doesn't hit "database is locked".
     c = sqlite3.connect(DB_PATH, timeout=5.0)
@@ -256,7 +285,7 @@ def cmd_doctor(a):
         chk(False, "memory store writable", f"{e} — check permissions on {DB_PATH.parent}",
             core_blockers)
     if store_ok:
-        chk(True, f"memory store writable ({DB_PATH.name})")
+        chk(True, f"memory store writable ({DB_PATH})")
     chk(n > 0, f"learned profile ({n} facts)",
         "run /learn first — it builds your profile from your OWN Gmail")
 
@@ -317,6 +346,7 @@ def main():
     d = sub.add_parser("doctor"); d.set_defaults(fn=cmd_doctor)
 
     args = p.parse_args()
+    _migrate_legacy()  # before any _conn(), or an empty new DB would mask the old one
     args.fn(args)
 
 

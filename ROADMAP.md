@@ -23,6 +23,11 @@ the rest is ordered by leverage.
   hardcoded to `Asia/Kolkata` (`${WORKSPACE_MCP_DEFAULT_TIMEZONE:-UTC}`), and
   **`/doctor`** (`store.py doctor`) preflights python3 / store / `uvx` / OAuth vars and
   never reports "ready" while the Google server can't actually start.
+- **The learned profile survives the repo.** It used to live inside the clone, so a
+  re-clone or `git clean -xdf` silently destroyed a profile that cost real mail to build.
+  Now at `~/.rahu/memory.db` (override: `RAHU_MEMORY_DB`, e.g. to share one profile across
+  clones), with a one-time cross-device migration that lifts any existing profile out —
+  WAL sidecars included, since moving only the `.db` can drop recent writes.
 
 ## 🟠 High — correctness & intelligence
 - **Learn from corrections.** Periodic pass that diffs "label RAHU applied" vs "label now on
