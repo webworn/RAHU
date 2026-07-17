@@ -25,8 +25,14 @@ Design
       tagging    - learned Gmail-label rules ("invoices -> Finance/Invoices")
       contact    - per-person facts (role, relationship, last topic)
       deal       - CRM / pipeline / IC-memo context
-      pref       - standing user preferences ("never auto-send to investors")
+      pref       - standing user preferences ("never auto-send to investors").
+                   USER-FACING: injected into every session as "Standing prefs" by
+                   session-start-inject-memory.sh, so keep machine bookkeeping OUT of it.
       thread     - durable summary of a long email thread (so we don't re-read it)
+      labelmap   - the user's learned label STRUCTURE (which group is pick-one)
+      cursor     - internal bookkeeping (e.g. autopilot:watermark). Deliberately its own
+                   kind: it used to squat in `pref`, where it was surfaced to every agent
+                   as if it were a standing user preference.
 
 CLI (stable contract — agents call these via Bash)
 --------------------------------------------------
@@ -204,21 +210,24 @@ def cmd_recall(a):
 
     scored.sort(key=lambda x: x[0], reverse=True)
 
-    out, used = [], 0
+    out, used = [], 2  # 2 = the enclosing [] of the facts array, so `used` == its real length
     for _, r in scored[: a.k]:
         _id, kind, key, text, source, weight, updated, _ = r
-        budget = a.max_chars - used - len(key)
-        if budget <= 0:
-            break
-        # Hard cap: never let a single fat fact blow the budget — truncate the
-        # first/oversized fact to fit rather than emit it whole (the old `and out`
-        # let the first fact exceed max_chars unconditionally).
-        if len(text) > budget:
-            text = text[: max(0, budget - 1)].rstrip() + "…"
-        chunk = {"id": _id, "kind": kind, "key": key, "text": text}
+        # Budget against the SERIALIZED size, envelope included. Counting only
+        # text+key under-reported every chunk by the id/kind/source JSON around it,
+        # so --max-chars was a soft cap wearing a "hard cap" comment.
+        chunk = {"id": _id, "kind": kind, "key": key, "text": ""}
         if source:
             chunk["source"] = source
-        used += len(text) + len(key)
+        overhead = len(json.dumps(chunk, ensure_ascii=False))
+        sep = 2 if out else 0  # json.dumps joins list items with ", " — two chars, not one
+        budget = a.max_chars - used - overhead - sep
+        if budget <= 0:
+            break
+        if len(text) > budget:  # truncate an oversized fact to fit rather than skip it
+            text = text[: max(0, budget - 1)].rstrip() + "…"
+        chunk["text"] = text
+        used += sep + overhead + len(text)
         out.append(chunk)
     print(json.dumps({"facts": out, "chars": used, "semantic": bool(qemb)}, ensure_ascii=False))
 
@@ -299,6 +308,13 @@ def cmd_doctor(a):
         chk(bool(os.environ.get(v)), f"${v}",
             f"export {v}=...   (Google Cloud Console → Credentials → OAuth desktop client)",
             workspace_gaps)
+
+    print("\nSafety")
+    settings = Path(__file__).resolve().parents[1] / "settings.json"
+    chk(settings.exists(), f"send-guard registered ({settings.name})",
+        "the send-latch lives in settings.example.json and is INERT until you copy it:\n"
+        "        cp .claude/settings.example.json .claude/settings.json\n"
+        "      Until then nothing in RAHU blocks a send — only Claude Code's own prompting.")
 
     print("\nOptional")
     print(f"  · semantic recall: {'available' if _semantic_available() else 'off — keyword fallback (fine, and faster per call)'}")

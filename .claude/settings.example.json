@@ -5,24 +5,9 @@
 
   "$comment_model": "Default = Sonnet (good writing + reasoning). Per-task overrides live in each agent's frontmatter: Haiku for high-volume triage/extraction, Opus for deal/IC-memo deep reasoning. See README 'Model routing'.",
 
-  "mcpServers": {
-    "google-workspace": {
-      "$comment": "Open-source unified Google MCP (taylorwilsdon/google_workspace_mcp, PyPI: workspace-mcp). Covers Gmail, Calendar, Tasks, Drive, Docs in ONE server — this is the 'no separate UI / everything in Google' backbone. First run opens a Google OAuth consent screen.",
-      "command": "uvx",
-      "args": [
-        "workspace-mcp",
-        "--tools", "gmail", "calendar", "tasks", "drive", "docs"
-      ],
-      "env": {
-        "GOOGLE_OAUTH_CLIENT_ID": "${GOOGLE_OAUTH_CLIENT_ID}",
-        "GOOGLE_OAUTH_CLIENT_SECRET": "${GOOGLE_OAUTH_CLIENT_SECRET}",
-        "USER_GOOGLE_EMAIL": "${USER_GOOGLE_EMAIL}",
-        "WORKSPACE_MCP_DEFAULT_TIMEZONE": "Asia/Kolkata"
-      }
-    }
-  },
+  "$comment_no_mcp_here": "The Google server is declared ONCE, in the repo-root .mcp.json — NOT here. `mcpServers` is not a settings.json key, so a copy here is silently ignored (or shadows .mcp.json); either way it drifts. A duplicate block used to live here and had already diverged, hardcoding Asia/Kolkata while .mcp.json honored ${WORKSPACE_MCP_DEFAULT_TIMEZONE:-UTC}. Set the timezone by exporting that variable.",
 
-  "$comment_alt_mcp": "Zero-setup alternative: the claude.ai-hosted Gmail / Google Calendar / Google Drive connectors need no OAuth app. They lack Google Tasks, so RAHU falls back to a Google Doc checklist when only the hosted connectors are present. Prefer the self-hosted server above for full Tasks support.",
+  "$comment_alt_mcp": "Zero-setup alternative: the claude.ai-hosted Gmail / Google Calendar / Google Drive connectors need no OAuth app. They lack Google Tasks. NOTE: they also expose DIFFERENT tool names (mcp__claude_ai_Gmail__*), which the agents' tools: lists and the permissions below do NOT yet cover — see ROADMAP.",
 
   "permissions": {
     "allow": [
@@ -58,8 +43,8 @@
     ],
     "PreToolUse": [
       {
-        "$comment": "Regex matcher (not an exact name) so the send-latch fires for ANY Gmail send tool — the self-hosted workspace-mcp (gmail_send_message) AND the claude.ai-hosted Gmail connector (send_email / *send*), which is named differently. Belt-and-suspenders on top of permissions.",
-        "matcher": "(?i)(gmail_send_message|Gmail.*send|send_email|send_message)",
+        "$comment": "Regex matcher (not an exact name) so the send-latch fires for ANY Gmail send tool — the self-hosted workspace-mcp (gmail_send_message) AND the claude.ai-hosted Gmail connector (send_email / send_message), which is named differently. Case classes are explicit: Claude Code compiles this with JS RegExp, where a leading (?i) is a COMPILE ERROR that silently disables the latch entirely. Do not reintroduce it.",
+        "matcher": "([Gg]mail.*[Ss]end|send_email|send_message|gmail_send_message)",
         "hooks": [
           { "type": "command", "command": "bash .claude/hooks/pre-send-guard.sh" }
         ]

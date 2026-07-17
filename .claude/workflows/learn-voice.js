@@ -15,16 +15,41 @@ const [voice, tagging] = await parallel([
     { agentType: 'memory-curator', label: 'learn:voice', phase: 'Learn' }
   ),
   () => agent(
-    `Learn the user's TAGGING conventions per the memory-curator skill. Inspect existing Gmail labels and the messages under each, infer the rule that explains them, and write one 'tagging' fact per label (add --kind tagging). Return the rules learned.`,
+    `Learn the user's TAGGING conventions per the memory-curator skill.
+     1. Fetch the user's LIVE Gmail label list — the only source of truth for what labels exist.
+     2. REQUIRED: write the label STRUCTURE as a single labelmap fact. /label preflights
+        \`recall --kind labelmap\` and refuses to run if it is missing, so skipping this
+        leaves the user permanently unable to label:
+        python3 .claude/memory/store.py add --kind labelmap --key structure --text "pick-one group (apply exactly 1): [...]. multi-select categories: [...]. retired: [...]. silent: yes/no."
+        Infer the pick-one group from labels that are mutually exclusive in practice and/or
+        share a structural marker (e.g. a numeric/ordinal prefix). Never invent labels.
+     3. Then inspect the messages under each label, infer the rule that explains them, and
+        write one 'tagging' fact per label (add --kind tagging).
+     Return the rules learned AND confirm the labelmap fact was written.`,
     { agentType: 'memory-curator', label: 'learn:tagging', phase: 'Learn' }
   ),
 ])
 
 phase('Report')
-// Read the store back so the user sees the profile that now drives drafting/triage.
+// Read the store back so the user sees the profile that now drives drafting/triage, and
+// VERIFY the labelmap landed — /label hard-stops without it, so a silent miss here is the
+// difference between a working install and a permanent dead end.
 const stats = await agent(
-  `Run: python3 .claude/memory/store.py stats  and  python3 .claude/memory/store.py list --limit 40 . Summarize what the RAHU profile now knows about the user's voice and tagging, and note anything thin that more email history would improve.`,
-  { label: 'profile-report', phase: 'Report' }
+  `Report the RAHU profile:
+   1. python3 .claude/memory/store.py stats
+   2. python3 .claude/memory/store.py list --limit 40
+   3. python3 .claude/memory/store.py recall --kind labelmap --k 1
+   Summarize what the profile now knows about the user's voice and tagging, and note
+   anything thin that more email history would improve.
+   CRITICAL: if step 3 returns no facts, say so LOUDLY — /label will refuse to run. Report
+   {labelmapOk: false} and tell the user to re-run /learn rather than reporting success.
+   Return {summary, labelmapOk}.`,
+  { agentType: 'memory-curator', label: 'profile-report', phase: 'Report',
+    schema: { type: 'object',
+              properties: { summary: { type: 'string' }, labelmapOk: { type: 'boolean' } },
+              required: ['summary', 'labelmapOk'] } }
 )
+
+if (stats && stats.labelmapOk === false) log('labelmap MISSING — /label will refuse to run. Re-run /learn.')
 
 return { voice, tagging, profile: stats }

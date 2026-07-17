@@ -10,7 +10,8 @@ Google Tasks, and Docs. No new app, no dashboard. It's a Google-native take on
 
 ## Quickstart (3 steps)
 
-You only need **Claude Code already installed**. That's it.
+You need **Claude Code**, plus a one-time Google setup in step 2 (`uv` + an OAuth client,
+≈5 min). Run `/doctor` at any point and it will tell you exactly what's missing.
 
 ### 1. Drop this repo into a folder and open Claude Code there
 ```bash
@@ -90,8 +91,11 @@ It re-labels new mail every 10 minutes.
   few facts it needs each time, so it stays fast and cheap.
 - **Right model for the job.** Cheap **Haiku** for high-volume triage, **Sonnet** for
   writing, **Opus** for deal memos.
-- **Safe by default.** RAHU **drafts and labels — it never sends email or moves your
-  calendar without you.** Learned data and any auto-send switch are git-ignored.
+- **Drafts, doesn't send.** RAHU drafts and labels; it does not send email or move your
+  calendar. Two things enforce that: Claude Code asks before any send, and RAHU's send-latch
+  hard-denies one. **The latch only runs once you copy `settings.json` (below)** — until
+  then Claude Code's prompt is the only thing standing there. Run `/doctor` to see which
+  you have. Learned data and the auto-send switch are git-ignored.
 
 ---
 
@@ -108,17 +112,19 @@ memory/      store.py — your local, private learning store
 
 ---
 
-## Optional: permissions, hooks & always-on
+## Recommended: turn on the send-latch, permissions & hooks
 
-The Google server itself is already wired via `.mcp.json` (step 2). To also **pre-approve
-the safe tool calls** (so RAHU stops asking on every label/draft), **inject your memory
-digest at session start**, and turn on the **send-safety latch**, review and copy the
-example settings:
+The Google server itself is already wired via `.mcp.json` (step 2). But the **send-safety
+latch is not active until you do this** — it, the permission allowlist (so RAHU stops
+asking on every label/draft), and the session-start memory digest all live in the example
+settings:
 ```bash
 cp .claude/settings.example.json .claude/settings.json   # read it first
 ```
-It's shipped as `.example` on purpose — nothing grants permissions or registers hooks
-until you opt in. Once copied, keep it always-on with `/loop --interval 10m /label 15m`.
+It ships as `.example` on purpose: nothing grants permissions or registers hooks until you
+opt in. That's a deliberate trade — **the cost is that a fresh clone has no send-latch**,
+which `/doctor` will now tell you. Once copied, keep it always-on with
+`/loop --interval 10m /label 15m`.
 The underlying server is the open-source
 [`workspace-mcp`](https://github.com/taylorwilsdon/google_workspace_mcp).
 
