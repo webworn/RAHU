@@ -33,6 +33,7 @@ CLI (stable contract — agents call these via Bash)
   list    [--kind K] [--limit 50]
   forget  --id N            |  --kind K --key NAME
   stats
+  doctor                    - first-run preflight: checks python3/uvx/OAuth env/store
 
 `recall` is the hot path: returns compact JSON the agent drops straight into
 context. `--max-chars` hard-caps the payload so a recall can never blow a budget.
@@ -96,6 +97,12 @@ def _embed(text):
         return [float(x) for x in _MODEL.encode(text, normalize_embeddings=True)]
     except Exception:
         return None
+
+
+def _semantic_available():
+    """Is sentence-transformers importable? Checked WITHOUT loading the model."""
+    import importlib.util
+    return importlib.util.find_spec("sentence_transformers") is not None
 
 
 def _cosine(a, b):
@@ -216,7 +223,73 @@ def cmd_stats(a):
         rows = c.execute("SELECT kind,COUNT(*) FROM facts GROUP BY kind").fetchall()
         total = c.execute("SELECT COUNT(*) FROM facts").fetchone()[0]
     print(json.dumps({"total": total, "by_kind": dict(rows),
-                      "semantic_available": _embed("ping") is not None}))
+                      "semantic_available": _semantic_available()}))
+
+
+def cmd_doctor(a):
+    """First-run preflight. Catches the confusing failures BEFORE the user hits them:
+    a missing `uvx` (the .mcp.json server can't start), unset OAuth vars (it starts but
+    can't authenticate), an unwritable store, or an un-learned profile."""
+    import shutil
+
+    core_blockers, workspace_gaps = [], []
+
+    def chk(passed, label, hint=None, bucket=None):
+        if not passed and bucket is not None:
+            bucket.append(label)
+        print(f"  {'✓' if passed else '✗'} {label}")
+        if not passed and hint:
+            print(f"      → {hint}")
+
+    print("RAHU doctor\n")
+
+    print("Core (always required)")
+    chk(sys.version_info >= (3, 8), f"python3 {sys.version.split()[0]}",
+        "RAHU needs Python 3.8+", core_blockers)
+    try:
+        with _conn() as c:
+            c.execute("SELECT 1")
+            n = c.execute("SELECT COUNT(*) FROM facts").fetchone()[0]
+        store_ok = True
+    except Exception as e:
+        store_ok, n = False, 0
+        chk(False, "memory store writable", f"{e} — check permissions on {DB_PATH.parent}",
+            core_blockers)
+    if store_ok:
+        chk(True, f"memory store writable ({DB_PATH.name})")
+    chk(n > 0, f"learned profile ({n} facts)",
+        "run /learn first — it builds your profile from your OWN Gmail")
+
+    print("\nFull Google Workspace path (.mcp.json — Gmail+Calendar+Tasks+Drive+Docs)")
+    print("  Skip this section if you're using the hosted Gmail connector via /mcp.")
+    uvx = shutil.which("uvx")
+    chk(bool(uvx), f"uvx {'→ ' + uvx if uvx else 'NOT FOUND'}",
+        "install uv (it provides uvx):  curl -LsSf https://astral.sh/uv/install.sh | sh",
+        workspace_gaps)
+    for v in ("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "USER_GOOGLE_EMAIL"):
+        chk(bool(os.environ.get(v)), f"${v}",
+            f"export {v}=...   (Google Cloud Console → Credentials → OAuth desktop client)",
+            workspace_gaps)
+
+    print("\nOptional")
+    print(f"  · semantic recall: {'available' if _semantic_available() else 'off — keyword fallback (fine, and faster per call)'}")
+    tz = os.environ.get("WORKSPACE_MCP_DEFAULT_TIMEZONE")
+    print(f"  · timezone: {tz or 'unset → server defaults to UTC (export WORKSPACE_MCP_DEFAULT_TIMEZONE=Asia/Kolkata to change)'}")
+
+    print()
+    if core_blockers:
+        print("NOT READY — fix the ✗ items under Core above, then re-run this.")
+    elif workspace_gaps:
+        print("Core is fine, but the .mcp.json Google server is INCOMPLETE:")
+        print(f"  missing: {', '.join(workspace_gaps)}")
+        print("  → finish those for the full experience (Tasks/Docs, /briefing, /memo), OR")
+        print("  → run /mcp and pick the hosted Gmail connector — zero setup, but")
+        print("    labeling + drafting only (no Tasks/Docs).")
+    elif n == 0:
+        print("Environment is ready. Next: run /learn, then /label.")
+    else:
+        print("All good — you're ready. Try /label dry-run.")
+    sys.exit(1 if core_blockers else 0)
 
 
 def main():
@@ -240,6 +313,8 @@ def main():
     f.add_argument("--kind"); f.add_argument("--key"); f.set_defaults(fn=cmd_forget)
 
     s = sub.add_parser("stats"); s.set_defaults(fn=cmd_stats)
+
+    d = sub.add_parser("doctor"); d.set_defaults(fn=cmd_doctor)
 
     args = p.parse_args()
     args.fn(args)

@@ -17,6 +17,12 @@ the rest is ordered by leverage.
   already have a RAHU draft.
 - **Hard recall budget** (a single fat fact can no longer blow `--max-chars`) and a
   **`--text` size cap** (`MAX_FACT_CHARS`) enforcing "distilled patterns, never raw bodies."
+- **Bootstrap is now honest.** A repo can only ship the MCP *recipe*, never the server
+  itself — so `uv`/`uvx` is documented as an explicit prerequisite (its absence made the
+  `.mcp.json` server fail with a bare "command not found"), the timezone is no longer
+  hardcoded to `Asia/Kolkata` (`${WORKSPACE_MCP_DEFAULT_TIMEZONE:-UTC}`), and
+  **`/doctor`** (`store.py doctor`) preflights python3 / store / `uvx` / OAuth vars and
+  never reports "ready" while the Google server can't actually start.
 
 ## 🟠 High — correctness & intelligence
 - **Learn from corrections.** Periodic pass that diffs "label RAHU applied" vs "label now on
@@ -42,8 +48,8 @@ the rest is ordered by leverage.
   current IDs (Opus 4.8 / Sonnet 5 / Haiku 4.5) and set triage→Haiku, memos→Opus explicitly.
 
 ## 🟢 Low — polish & onboarding
-- **First-run self-check** (`store.py doctor`, or a preflight in `/learn`) to catch
-  environment issues before the user is confused.
+- **Wire `/doctor` into `/learn` and `/label`** as an automatic preflight, so a broken
+  setup is reported before the first confusing tool failure rather than after.
 - **Windows-native portability.** Hooks are `.sh` (fine in WSL); ship `.cmd` equivalents or
   note the requirement for native-Windows users of the public repo.
 - **Smoke test** for the workflows with a mock agent, to catch schema drift beyond

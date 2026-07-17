@@ -25,14 +25,27 @@ you open the folder** and asks you to approve it — just say yes. On first use 
 **browser opens** for a normal Google sign-in, then RAHU can read labels, draft, and
 write to Calendar / Tasks / Docs.
 
-One-time prerequisite (≈5 min): create a Google OAuth **desktop** client and export three
-values so the server can act as *you* — a self-hosted server needs your own credential,
-there's no way around it:
+**One-time prerequisites (≈5 min).** The repo ships the *recipe*, not the server — an MCP
+server is a program that runs on your machine, so two things must exist first:
+
 ```bash
-export GOOGLE_OAUTH_CLIENT_ID=...       # from Google Cloud Console → Credentials
+# 1. uv — provides `uvx`, which fetches & runs the Google server. Without it,
+#    the server fails to start with "command not found".
+curl -LsSf https://astral.sh/uv/install.sh | sh     # Windows: irm https://astral.sh/uv/install.ps1 | iex
+
+# 2. Your own Google OAuth *desktop* client — a self-hosted server has to act as
+#    you, and there's no way around supplying your own credential.
+export GOOGLE_OAUTH_CLIENT_ID=...       # Google Cloud Console → APIs & Services → Credentials
 export GOOGLE_OAUTH_CLIENT_SECRET=...
 export USER_GOOGLE_EMAIL=you@your-domain.com
+export WORKSPACE_MCP_DEFAULT_TIMEZONE=Asia/Kolkata   # optional, defaults to UTC
 ```
+
+**Check it before you hit a confusing failure:**
+```bash
+python3 .claude/memory/store.py doctor    # or just run /doctor inside Claude Code
+```
+It tells you exactly what's missing and how to fix it.
 > **Just want a quick taste?** Run `/mcp` and pick the hosted **Gmail** connector instead —
 > zero setup, but it covers labeling + drafting only (no Tasks/Docs, so `/briefing` and
 > `/memo` are unavailable). The full experience uses the `.mcp.json` server above.
@@ -51,6 +64,7 @@ That's the whole setup. Everything below is optional.
 
 | Type this | What happens |
 |---|---|
+| `/doctor` | Preflight — checks `uvx`, OAuth vars, python3, and your memory store, and says exactly what's missing |
 | `/learn` | Learns your labels, tagging rules, and writing voice from your own Gmail (run once, refresh monthly) |
 | `/label` | Auto-applies **your** labels to new mail, silently. `/label dry-run` previews without changing anything |
 | `/catchup` | Summarizes every new email and leaves a ready-to-send **draft** for each |
