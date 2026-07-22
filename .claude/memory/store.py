@@ -36,15 +36,23 @@ Design
 
 CLI (stable contract — agents call these via Bash)
 --------------------------------------------------
-  add     --kind K --key NAME --text "FACT" [--source URL] [--weight 1.0]
-  recall  --kind K [--query "..."] [--key NAME] [--k 6] [--max-chars 1200]
-  list    [--kind K] [--limit 50]
-  forget  --id N            |  --kind K --key NAME
+  add      --kind K --key NAME --text "FACT" [--source URL] [--weight 1.0]
+  recall   --kind K [--query "..."] [--key NAME] [--k 6] [--max-chars 1200]
+  list     [--kind K] [--limit 50]
+  forget   --id N            |  --kind K --key NAME
   stats
+  reindex                    - compute embeddings for rows still missing one
   doctor                    - first-run preflight: checks python3/uvx/OAuth env/store
 
 `recall` is the hot path: returns compact JSON the agent drops straight into
 context. `--max-chars` hard-caps the payload so a recall can never blow a budget.
+
+Embeddings are NOT computed at `add` time on purpose: loading the
+sentence-transformers model costs ~2-5s and hundreds of MB, and the workflow
+fan-out does many `add`s at once — paying that per write would be brutal. So
+`add` stays model-free and leaves `embedding` NULL; a single `reindex` run loads
+the model once and back-fills every NULL row. Until then (or with the lib
+absent) `recall` transparently uses the keyword/recency fallback.
 
 All writes are idempotent on (kind,key): re-adding the same key UPDATES the fact
 (so the "dynamic, learned-from-email-trails" profile stays fresh, not duplicated).
@@ -69,50 +77,82 @@ def _db_path():
     return Path(env).expanduser() if env else Path.home() / ".rahu" / "memory.db"
 
 
-DB_PATH = _db_path()
+# Resolved LAZILY (via _db_path()) on every _conn()/main() call, NOT frozen at import:
+# a caller that sets RAHU_MEMORY_DB after this module loads (tests, embedded use) must
+# still be honored, and the same process may target different DBs across calls.
 _LEGACY_DB = Path(__file__).with_name("memory.db")  # pre-2026-07 location, inside the clone
 
 
 def _migrate_legacy():
     """One-time lift of a profile from the old in-clone location. Sidecars included —
     WAL's -wal/-shm hold real data, so moving only the .db can lose recent writes."""
-    if DB_PATH.exists() or not _LEGACY_DB.exists():
+    db = _db_path()
+    if db.exists() or not _LEGACY_DB.exists():
         return
     import shutil
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    db.parent.mkdir(parents=True, exist_ok=True)
     for suffix in ("", "-wal", "-shm"):
         src = Path(str(_LEGACY_DB) + suffix)
         if src.exists():
-            shutil.move(str(src), str(Path(str(DB_PATH) + suffix)))  # shutil: may cross devices
-    print(f"[rahu] moved your learned profile out of the repo → {DB_PATH}", file=sys.stderr)
+            shutil.move(str(src), str(Path(str(db) + suffix)))  # shutil: may cross devices
+    print(f"[rahu] moved your learned profile out of the repo → {db}", file=sys.stderr)
 
 # --------------------------------------------------------------------------- #
 # storage
 # --------------------------------------------------------------------------- #
 
+# Bump this when the schema changes AND add a matching `if v < N:` block in
+# _migrate_schema(). The DB lives at ~/.rahu/memory.db and outlives repo clones, so
+# every migration must be safe to run against a DB that already holds real facts.
+SCHEMA_VERSION = 1
+
+
+def _migrate_schema(c):
+    """`PRAGMA user_version` migration scaffold.
+
+    user_version 0 = an *unversioned* DB: either brand-new, or one written before this
+    versioning existed (which already has the `facts` table from the old
+    CREATE-on-connect). Migrations run in order from the DB's current version up to
+    SCHEMA_VERSION; each step is guarded by IF NOT EXISTS so it's idempotent and never
+    clobbers existing data. To evolve the schema later: bump SCHEMA_VERSION and append a
+    new `if v < N:` block — do NOT edit a migration that has already shipped.
+    """
+    v = c.execute("PRAGMA user_version").fetchone()[0]
+    if v >= SCHEMA_VERSION:
+        return
+    if v < 1:
+        # v0 -> v1: baseline schema. IF NOT EXISTS makes this a no-op DDL on legacy DBs
+        # that already carry the table, so their rows survive the version bump untouched.
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS facts (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind      TEXT NOT NULL,
+                key       TEXT NOT NULL,
+                text      TEXT NOT NULL,
+                source    TEXT,
+                weight    REAL DEFAULT 1.0,
+                updated   REAL NOT NULL,
+                embedding TEXT,                      -- json float list, or NULL
+                UNIQUE(kind, key)
+            )
+            """
+        )
+        c.execute("CREATE INDEX IF NOT EXISTS idx_kind ON facts(kind)")
+    # (future) if v < 2: c.execute("ALTER TABLE facts ADD COLUMN ...")
+    c.execute(f"PRAGMA user_version={SCHEMA_VERSION}")  # PRAGMA can't bind params; int is ours
+    c.commit()  # persist the bump + DDL even for otherwise read-only callers
+
+
 def _conn():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    db = _db_path()  # resolved per call so a late-set RAHU_MEMORY_DB is honored
+    db.parent.mkdir(parents=True, exist_ok=True)
     # busy_timeout + WAL so the workflow fan-out (parallel()/pipeline() spawns many
     # agents that each `store.py add` at once) doesn't hit "database is locked".
-    c = sqlite3.connect(DB_PATH, timeout=5.0)
+    c = sqlite3.connect(db, timeout=5.0)
     c.execute("PRAGMA journal_mode=WAL")
     c.execute("PRAGMA busy_timeout=5000")
-    c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS facts (
-            id        INTEGER PRIMARY KEY AUTOINCREMENT,
-            kind      TEXT NOT NULL,
-            key       TEXT NOT NULL,
-            text      TEXT NOT NULL,
-            source    TEXT,
-            weight    REAL DEFAULT 1.0,
-            updated   REAL NOT NULL,
-            embedding TEXT,                      -- json float list, or NULL
-            UNIQUE(kind, key)
-        )
-        """
-    )
-    c.execute("CREATE INDEX IF NOT EXISTS idx_kind ON facts(kind)")
+    _migrate_schema(c)
     return c
 
 
@@ -120,10 +160,21 @@ def _conn():
 # optional semantic layer (graceful fallback to keyword scoring)
 # --------------------------------------------------------------------------- #
 
+# Kinds worth embedding for semantic recall. Bookkeeping kinds (cursor), standing
+# prefs, and label STRUCTURE are excluded — they're matched by kind/key, not by meaning.
+EMBED_KINDS = ("voice", "tagging", "contact", "deal", "thread")
+
 _MODEL = None
 
 def _embed(text):
-    """Return a list[float] embedding, or None if sentence-transformers absent."""
+    """Return a list[float] embedding, or None if sentence-transformers is absent.
+
+    Guarded by _semantic_available() FIRST so the (~2-5s, hundreds-of-MB) model is never
+    even reached for on a machine without the lib. The model is memoised in _MODEL, but
+    that memo is per-process: only paths that genuinely need it (recall --query, reindex)
+    call this — everything else stays model-free."""
+    if not _semantic_available():
+        return None
     global _MODEL
     try:
         if _MODEL is None:
@@ -159,47 +210,63 @@ def _keyword_score(query, text):
 # --------------------------------------------------------------------------- #
 
 MAX_FACT_CHARS = 2000  # facts are DISTILLED patterns, not raw email bodies — enforce it.
+WEIGHT_MAX = 3.0        # --weight is blended (s*2 + weight*0.3 + ...); unbounded weight
+                        # lets one fact bury relevance, so clamp it to [0, WEIGHT_MAX].
 
 
 def cmd_add(a):
     if len(a.text) > MAX_FACT_CHARS:
         a.text = a.text[: MAX_FACT_CHARS - 1].rstrip() + "…"
-    emb = _embed(a.text) if a.kind in ("voice", "tagging", "contact", "deal", "thread") else None
+    if not (0.0 <= a.weight <= WEIGHT_MAX):
+        clamped = min(WEIGHT_MAX, max(0.0, a.weight))
+        print(f"[rahu] --weight {a.weight} out of [0, {WEIGHT_MAX}] — clamped to {clamped}",
+              file=sys.stderr)
+        a.weight = clamped
+    # NOTE: no embedding computed here on purpose — `add` stays model-free (see module
+    # docstring). Insert embedding NULL; `reindex` back-fills it. On an UPDATE we keep the
+    # existing embedding only if the text is unchanged, else NULL it so it gets recomputed.
     with _conn() as c:
         c.execute(
             """
             INSERT INTO facts(kind,key,text,source,weight,updated,embedding)
-            VALUES(?,?,?,?,?,?,?)
+            VALUES(?,?,?,?,?,?,NULL)
             ON CONFLICT(kind,key) DO UPDATE SET
                 text=excluded.text, source=excluded.source,
                 weight=excluded.weight, updated=excluded.updated,
-                embedding=excluded.embedding
+                embedding=CASE WHEN facts.text=excluded.text THEN facts.embedding ELSE NULL END
             """,
-            (a.kind, a.key, a.text, a.source, a.weight, time.time(),
-             json.dumps(emb) if emb else None),
+            (a.kind, a.key, a.text, a.source, a.weight, time.time()),
         )
     print(json.dumps({"ok": True, "kind": a.kind, "key": a.key}))
 
 
 def cmd_recall(a):
-    with _conn() as c:
-        rows = c.execute(
-            "SELECT id,kind,key,text,source,weight,updated,embedding FROM facts WHERE kind=?",
-            (a.kind,),
-        ).fetchall() if a.kind else c.execute(
-            "SELECT id,kind,key,text,source,weight,updated,embedding FROM facts"
-        ).fetchall()
-
+    # Filter in SQL (kind AND/OR key), not in Python: no reason to SELECT the whole table
+    # and drop rows afterwards — the WHERE does it in one pass and returns only what we need.
+    where, params = [], []
+    if a.kind:
+        where.append("kind=?"); params.append(a.kind)
     if a.key:
-        rows = [r for r in rows if r[2] == a.key]
+        where.append("key=?"); params.append(a.key)
+    q = "SELECT id,kind,key,text,source,weight,updated,embedding FROM facts"
+    if where:
+        q += " WHERE " + " AND ".join(where)
+    with _conn() as c:
+        rows = c.execute(q, params).fetchall()
 
     scored = []
+    # Only reach for the model when there's a query AND the lib is present; otherwise
+    # qemb stays None and every row falls through to the keyword/recency fallback.
     qemb = _embed(a.query) if a.query else None
+    semantic_used = False  # true ONLY if cosine actually scored against a stored embedding
     for r in rows:
         _id, kind, key, text, source, weight, updated, emb = r
         if a.query:
             if qemb and emb:
-                s = _cosine(qemb, json.loads(emb))
+                # cosine ∈ [-1,1] but _keyword_score ∈ [0,1]; they're ranked together, so
+                # map cosine to [0,1] via (c+1)/2 before blending — else negatives skew it.
+                s = (_cosine(qemb, json.loads(emb)) + 1.0) / 2.0
+                semantic_used = True
             else:
                 s = _keyword_score(a.query, text)
         else:
@@ -229,7 +296,7 @@ def cmd_recall(a):
         chunk["text"] = text
         used += sep + overhead + len(text)
         out.append(chunk)
-    print(json.dumps({"facts": out, "chars": used, "semantic": bool(qemb)}, ensure_ascii=False))
+    print(json.dumps({"facts": out, "chars": used, "semantic": semantic_used}, ensure_ascii=False))
 
 
 def cmd_list(a):
@@ -264,6 +331,36 @@ def cmd_stats(a):
                       "semantic_available": _semantic_available()}))
 
 
+def cmd_reindex(a):
+    """Back-fill embeddings for embeddable rows that don't have one yet.
+
+    Two jobs in one: (1) the primary indexing pass — `add` leaves `embedding` NULL, so
+    this is what actually makes semantic recall work; (2) the repair path — before this
+    existed, a transient embed failure left a row NULL forever with no way to retry.
+    Loads the model ONCE for the whole batch. Degrades gracefully (clear message, exit 0)
+    when sentence-transformers isn't installed — keyword recall needs no embeddings."""
+    if not _semantic_available():
+        print("reindex: sentence-transformers not installed — nothing to do. "
+              "Recall uses the keyword/recency fallback, which needs no embeddings.")
+        sys.exit(0)
+    placeholders = ",".join("?" * len(EMBED_KINDS))
+    fixed, skipped = 0, 0
+    with _conn() as c:
+        rows = c.execute(
+            f"SELECT id,text FROM facts WHERE embedding IS NULL AND kind IN ({placeholders})",
+            EMBED_KINDS,
+        ).fetchall()
+        for _id, text in rows:
+            emb = _embed(text)
+            if emb:
+                c.execute("UPDATE facts SET embedding=? WHERE id=?", (json.dumps(emb), _id))
+                fixed += 1
+            else:
+                skipped += 1  # embed returned None (e.g. model load failed) — retryable later
+    print(json.dumps({"ok": True, "fixed": fixed, "skipped": skipped,
+                      "candidates": fixed + skipped}))
+
+
 def cmd_doctor(a):
     """First-run preflight. Catches the confusing failures BEFORE the user hits them:
     a missing `uvx` (the .mcp.json server can't start), unset OAuth vars (it starts but
@@ -281,6 +378,7 @@ def cmd_doctor(a):
 
     print("RAHU doctor\n")
 
+    db = _db_path()
     print("Core (always required)")
     chk(sys.version_info >= (3, 8), f"python3 {sys.version.split()[0]}",
         "RAHU needs Python 3.8+", core_blockers)
@@ -291,15 +389,20 @@ def cmd_doctor(a):
         store_ok = True
     except Exception as e:
         store_ok, n = False, 0
-        chk(False, "memory store writable", f"{e} — check permissions on {DB_PATH.parent}",
+        chk(False, "memory store writable", f"{e} — check permissions on {db.parent}",
             core_blockers)
     if store_ok:
-        chk(True, f"memory store writable ({DB_PATH})")
+        chk(True, f"memory store writable ({db})")
     chk(n > 0, f"learned profile ({n} facts)",
         "run /learn first — it builds your profile from your OWN Gmail")
 
     print("\nFull Google Workspace path (.mcp.json — Gmail+Calendar+Tasks+Drive+Docs)")
-    print("  Skip this section if you're using the hosted Gmail connector via /mcp.")
+    # Two ways to connect Google — this section only checks the self-hosted one:
+    print("  There are two ways to connect Google; this section checks the self-hosted path:")
+    print("    · self-hosted workspace-mcp   — FULL: Gmail+Calendar+Tasks+Drive+Docs;")
+    print("                                    needs uvx + OAuth env (checked below).")
+    print("    · claude.ai-hosted connectors — zero-setup via /mcp, but Gmail/Calendar/Drive")
+    print("                                    only (no Tasks). Skip this section if you use it.")
     uvx = shutil.which("uvx")
     chk(bool(uvx), f"uvx {'→ ' + uvx if uvx else 'NOT FOUND'}",
         "install uv (it provides uvx):  curl -LsSf https://astral.sh/uv/install.sh | sh",
@@ -358,6 +461,8 @@ def main():
     f.add_argument("--kind"); f.add_argument("--key"); f.set_defaults(fn=cmd_forget)
 
     s = sub.add_parser("stats"); s.set_defaults(fn=cmd_stats)
+
+    ri = sub.add_parser("reindex"); ri.set_defaults(fn=cmd_reindex)
 
     d = sub.add_parser("doctor"); d.set_defaults(fn=cmd_doctor)
 
