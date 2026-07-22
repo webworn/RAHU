@@ -17,3 +17,6 @@ Workflow({ name: "rahu-morning-briefing", args: { mode: "<mode>", window: "<wind
 When it returns, give the user the Google Doc URL, the counts (triaged / drafted /
 tasks), and explicitly list any drafts flagged for human review under "Needs you".
 Do not send anything — drafts wait in Gmail for review.
+
+If Google tool calls fail, run `python3 .claude/memory/store.py doctor` and relay
+its findings instead of retrying blindly.

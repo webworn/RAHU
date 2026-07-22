@@ -15,6 +15,9 @@ Report processed / drafted / tasked counts. Drafts sit in Gmail for review — R
 does **not** send unless the user has explicitly moved `gmail_send_message` from
 `permissions.ask` to `allow`.
 
+If Google tool calls fail, run `python3 .claude/memory/store.py doctor` and relay
+its findings instead of retrying blindly.
+
 ## Always-on mode
 For continuous operation the user types:
 

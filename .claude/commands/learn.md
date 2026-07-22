@@ -4,6 +4,10 @@ description: Learn / refresh the user's writing voice and Gmail tagging conventi
 
 Refresh the RAHU context profile from the user's own email history.
 
+Preflight: run `python3 .claude/memory/store.py doctor`. If it exits non-zero
+(core blockers), show the doctor output and STOP — tell the user to fix the
+listed issues and re-run `/learn`.
+
 ```
 Workflow({ name: "rahu-learn-voice" })
 ```
