@@ -10,8 +10,8 @@ conventions, learned from *their* mail. Nothing about any one user's taxonomy li
 code; it is discovered at runtime and stored in the per-user local memory.
 
 ## Step 0 — load the user's live scheme (never assume labels)
-1. **Fetch the live label list from Gmail** (`labels.list` via the Gmail tool). This is
-   the source of truth for what labels exist right now — names, nesting (`A/B`), counts.
+1. **Fetch the user's live Gmail label list** with your label-listing tool — the only
+   source of truth for what labels exist right now — names, nesting (`A/B`), counts.
 2. **Recall the learned conventions** from per-user memory:
    ```bash
    python3 .claude/memory/store.py recall --kind labelmap --k 1 --max-chars 800   # structure: which group is pick-one
@@ -38,6 +38,14 @@ For each new message, choose only from labels that actually exist in the fetched
   label from that group first** so only one remains; other labels are additive.
 - Idempotency: skip threads already carrying the processed marker; add it after labeling.
 - Apply **silently** if the user's prefs say so. Never send notifications about labeling.
+- **Audit trail (silent, local bookkeeping — not a Gmail write)**: after each label change
+  is applied, record it so `/stats` and the correction loop have something to diff against:
+  ```bash
+  python3 .claude/memory/store.py add --kind audit --key "<message-id>" --text "<+Label / -Label>; from:<sender-domain>; ts:<epoch>"
+  ```
+  One fact per message (`add` upserts on key, so re-processing just refreshes it).
+  Distilled only — never the subject or body, per this repo's send-guard privacy rule:
+  patterns, not content.
 
 ## Step 3 — learn (keep it dynamic)
 When you resolve an ambiguous case or see a new recurring sender/pattern, persist it so
