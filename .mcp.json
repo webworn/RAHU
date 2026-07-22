@@ -2,7 +2,7 @@
   "mcpServers": {
     "google-workspace": {
       "command": "uvx",
-      "args": ["workspace-mcp", "--tools", "gmail", "calendar", "tasks", "drive", "docs"],
+      "args": ["workspace-mcp==1.22.0", "--tools", "gmail", "calendar", "tasks", "drive", "docs"],
       "env": {
         "GOOGLE_OAUTH_CLIENT_ID": "${GOOGLE_OAUTH_CLIENT_ID}",
         "GOOGLE_OAUTH_CLIENT_SECRET": "${GOOGLE_OAUTH_CLIENT_SECRET}",
