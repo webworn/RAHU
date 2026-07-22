@@ -6,11 +6,14 @@ description: Produce Dimension's Morning/Evening Briefing — one screen that su
 # morning-briefing
 
 Recreate Dimension's single-screen daily briefing inside Google. No separate UI:
-the briefing is a **Google Doc** (created via `docs_create`) and optionally a
-**draft email to self** so it shows in the inbox.
+the briefing is a **Google Doc** (created via `create_doc`; hosted: `create_file`)
+and optionally a **draft email to self** so it shows in the inbox. Dedup pattern:
+search first for today's briefing (`search_docs`; hosted: `search_files`) and
+update in place if found (`modify_doc_text` — workspace only; hosted has no
+update-in-place, so create a fresh Doc instead).
 
 ## What the briefing contains (in this order)
-1. **Today's map** — meetings from `calendar_list_events` (today), with gaps marked
+1. **Today's map** — meetings from `get_events` (hosted: `list_events`) (today), with gaps marked
    as deep-work windows. One line each: time · title · who · prep-ready? (link).
 2. **Overnight digest** — from email-triage output: counts by priority, the 3–5
    P1 items called out by name, bulk/newsletters collapsed to a number.
@@ -28,7 +31,7 @@ the briefing is a **Google Doc** (created via `docs_create`) and optionally a
 3. Run draft-in-voice for each P1/P2 needing reply → Gmail drafts.
 4. Run action-items extraction → Google Tasks.
 5. Run meeting-prep for today's meetings → prep blurbs (link each in the map).
-6. Assemble the Doc with `docs_create`; title `RAHU Briefing — <date>`.
+6. Assemble the Doc with `create_doc` (hosted: `create_file`); title `RAHU Briefing — <date>`.
 7. Persist durable thread summaries (`add --kind thread`) so tomorrow is cheaper.
 
 ## Model routing

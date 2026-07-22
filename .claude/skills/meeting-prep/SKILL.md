@@ -9,10 +9,11 @@ For each upcoming meeting, produce a tight prep brief and attach it where the us
 already looks: the **Calendar event** (update its description) and/or a linked
 **Google Doc**. No new app.
 
-## Procedure (per event from `calendar_list_events`)
+## Procedure (per event from `list_calendars`/`get_events`; hosted: `list_events`/`search_events`)
 1. Identify attendees from the event; for each, `recall --kind contact --query "<email>"`.
-2. Pull recent threads with those people: `gmail_list_messages` `from:/to:<attendee>`
-   newer_than:30d — but prefer the stored `thread` summaries over re-reading.
+2. Pull recent threads with those people: `search_gmail_messages` (hosted: `search_threads`)
+   `from:/to:<attendee>` newer_than:30d — but prefer the stored `thread` summaries over
+   re-reading.
 3. `recall --kind deal --query "<company>"` for status/last-conversation if relevant.
 4. Find open follow-ups: action-items / Tasks tagged to these people or this company.
 5. Compose the brief:
@@ -21,7 +22,8 @@ already looks: the **Calendar event** (update its description) and/or a linked
    - **Open follow-ups** (what you owe them / they owe you).
    - **Goal for this meeting** + 2–3 talking points.
    - **Risks / sensitivities** (from prefs/contact notes).
-6. Write it into the event description (or a Doc linked from the briefing's day-map).
+6. Write it into the event description (`manage_event`; hosted: `update_event`), or a
+   Doc linked from the briefing's day-map.
 
 ## Recap variant (after the meeting / evening briefing)
 Summarize decisions + new action items → create Google Tasks, and persist

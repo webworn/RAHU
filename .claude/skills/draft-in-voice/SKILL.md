@@ -21,8 +21,9 @@ on the thread for one-click review-and-send. (Dimension: "Just review and send."
 4. Keep it to the point the inbound message requires; do not invent commitments,
    dates, numbers, or promises not supported by context — leave a `[[confirm: ...]]`
    placeholder instead.
-5. Save with `gmail_create_draft` (in-reply-to the thread). Report the draft back in
-   the briefing/catchup with a 1-line gist so the user can scan many at once.
+5. Save with `draft_gmail_message` (hosted: `create_draft`), in-reply-to the thread.
+   Report the draft back in the briefing/catchup with a 1-line gist so the user can
+   scan many at once.
 
 ## Voice fidelity
 - The voice profile is built by **memory-curator** from Sent mail and refreshed by
@@ -32,7 +33,8 @@ on the thread for one-click review-and-send. (Dimension: "Just review and send."
   decides via the agent it routes to.
 
 ## Hard rules
-- NEVER call `gmail_send_message` from this skill. Draft only. Sending is a separate,
-  human-gated step (it sits in `permissions.ask`).
+- NEVER call `send_gmail_message` from this skill. Draft only. Sending is a separate,
+  human-gated step (it sits in `permissions.ask`). Hosted Gmail has no send tool at
+  all, so on that path this is inherently safe.
 - No fabricated facts. Unknowns become explicit `[[confirm]]` placeholders.
 - After sending patterns emerge, persist refinements: `add --kind voice ...`.

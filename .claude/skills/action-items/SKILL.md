@@ -8,7 +8,7 @@ description: Extract action items from email, meetings, and threads, and turn th
 Turn scattered asks into one tracked queue of **Google Tasks**.
 
 ## Procedure
-1. Recall existing context cheaply; list current tasks `tasks_list` to dedupe.
+1. Recall existing context cheaply; list current tasks (`list_tasks`; hosted: no Tasks) to dedupe.
 2. From the source (a triaged message, a meeting recap, a thread summary), extract
    only genuine commitments/asks — imperative, has an owner-is-the-user, actionable.
    Skip FYIs and things already done.
@@ -17,11 +17,14 @@ Turn scattered asks into one tracked queue of **Google Tasks**.
    - **due**: infer from context ("by Friday", "EOD") → concrete date; else leave unset.
    - **notes**: 1-line context + the Gmail/Doc link to the source.
 4. Dedupe: if a near-identical open task exists, update it instead of adding.
-5. Insert via `tasks_insert`. Report the list back to the briefing.
+5. Insert via `manage_task` (hosted: no Tasks — use the fallback below). Report the list back to the briefing.
 
 ## Fallback (hosted-connector-only setups without Tasks)
-Create/append a Google Doc "RAHU Action Items — <date>" with `[ ]` checkboxes and
-the same fields. The briefing links to it.
+Hosted Gmail/Drive have no Tasks tool, so track items in Google directly instead:
+either a checklist section (`[ ]` items) in the briefing Doc — create/update it with
+Drive's `create_file` — or, if no Doc exists yet, a self-addressed Gmail draft
+(`create_draft`) titled "RAHU Action Items — <date>" listing each item with the same
+fields (title, due, source link). The briefing links to whichever was used.
 
 ## Model routing
 - **Haiku** — extraction is classification-shaped and high volume.
