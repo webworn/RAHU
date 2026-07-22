@@ -24,11 +24,13 @@ event or the briefing.
 
 ## IC / deal memo (the Dimension "IC memo" feature)
 1. Gather inputs: stored `deal`/`contact`/`thread` facts; recent threads
-   (`gmail_list_messages`); the deck and notes from `drive_search` (`docs_create`/Drive).
+   (search mail — `search_gmail_messages`; hosted: `search_threads`); the deck and
+   notes from Drive (`search_drive_files`; hosted: `search_files`).
 2. Draft a structured memo Doc: Summary · Team · Market · Product · Traction ·
    Terms · Risks · Recommendation. Cite each claim's source (email/deck/notes).
 3. Mark every unverified number as `[[confirm]]` — never fabricate metrics.
-4. `docs_create` the memo; link it from the briefing and the deal's contact note.
+4. Create the memo Doc (`create_doc`; hosted: `create_file`); link it from the
+   briefing and the deal's contact note.
 
 ## Model routing
 - **Opus** — deal memos and risk framing are the highest-reasoning task in RAHU.
