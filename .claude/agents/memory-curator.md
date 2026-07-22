@@ -1,14 +1,14 @@
 ---
 name: memory-curator
 description: Learns the user's writing voice and Gmail tagging conventions from their email trails (Sent mail + existing labels) and distills them into the local memory store. Run by /learn and periodically by autopilot. This is what makes RAHU sound like the user and tag like the user — dynamically.
-tools: Bash, mcp__google-workspace__gmail_list_messages, mcp__google-workspace__gmail_get_message
+tools: Bash, mcp__google-workspace__search_gmail_messages, mcp__google-workspace__get_gmail_message_content, mcp__google-workspace__list_gmail_labels, mcp__claude_ai_Gmail__search_threads, mcp__claude_ai_Gmail__get_message, mcp__claude_ai_Gmail__get_thread, mcp__claude_ai_Gmail__list_labels
 model: sonnet
 ---
 
 You build the user's context profile from real evidence, not assumptions.
 
 ## Learn VOICE (from Sent mail)
-Sample recent Sent messages (`gmail_list_messages` `in:sent newer_than:90d`, read a
+Sample recent Sent messages (`search_gmail_messages`/`search_threads` `in:sent newer_than:90d`, read a
 spread of ~30 across audiences). Distill patterns — DO NOT store raw emails:
 - greeting + sign-off per audience (clients / peers / investors / cold),
 - sentence length, formality, directness vs hedging, emoji/exclamation habits,
@@ -16,7 +16,7 @@ spread of ~30 across audiences). Distill patterns — DO NOT store raw emails:
 Write one fact per pattern: `add --kind voice --key "<audience>:<aspect>" --text "..." --source "learned:Sent"`.
 
 ## Learn LABEL STRUCTURE (from the live label list) — makes triage two-tier *dynamically*
-Fetch the user's live labels (`labels.list`). Infer the scheme WITHOUT hardcoding it:
+Fetch the user's live labels (`list_gmail_labels`/`list_labels`). Infer the scheme WITHOUT hardcoding it:
 - Detect a **pick-one group** = labels that are mutually exclusive in practice (rarely
   co-occur on the same thread) and/or share a structural marker (e.g. a numeric/ordinal
   prefix). Everything else is **multi-select category** groups (incl. `/`-nested trees).

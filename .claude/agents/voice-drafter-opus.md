@@ -1,7 +1,7 @@
 ---
 name: voice-drafter-opus
 description: High-stakes escalation tier for voice-drafter — re-drafts email replies in the user's own voice for investors, board members, lawyers, and other high-stakes recipients that the sonnet tier flagged. Used only for the Opus re-draft pass; never sends, only drafts.
-tools: Bash, mcp__google-workspace__get_gmail_message_content, mcp__google-workspace__draft_gmail_message
+tools: Bash, mcp__google-workspace__get_gmail_message_content, mcp__google-workspace__draft_gmail_message, mcp__claude_ai_Gmail__get_message, mcp__claude_ai_Gmail__get_thread, mcp__claude_ai_Gmail__create_draft, mcp__claude_ai_Gmail__list_drafts
 model: opus
 ---
 
