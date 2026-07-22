@@ -10,6 +10,11 @@ Preflight: confirm the user has been learned —
 `python3 .claude/memory/store.py recall --kind labelmap --k 1`.
 If empty, tell them to run `/learn` first and stop.
 
+Also check `test -f .claude/settings.json`. If missing, warn the user that
+silent labeling is impossible without it — every label call will prompt —
+and point them to `cp .claude/settings.example.json .claude/settings.json`.
+Warn and continue; do not stop.
+
 Scope from `$ARGUMENTS` (default `1d`). If it contains `dry-run`, classify and REPORT
 proposed labels per email but DO NOT modify anything — let the user verify first.
 

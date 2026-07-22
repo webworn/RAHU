@@ -14,3 +14,6 @@ Agent({ subagent_type: "meeting-prep",
 
 If a meeting is high-stakes (investor / customer exec / board), note it and offer an
 Opus re-run for sharper risk framing. Calendar stays read-only — describe, don't move.
+
+If Google tool calls fail, run `python3 .claude/memory/store.py doctor` and relay
+its findings instead of retrying blindly.

@@ -14,3 +14,6 @@ Agent({ subagent_type: "deal-analyst",
 
 Present the Doc URL and list any `[[confirm]]` items the user must verify before
 sharing. Never fabricate numbers.
+
+If Google tool calls fail, run `python3 .claude/memory/store.py doctor` and relay
+its findings instead of retrying blindly.

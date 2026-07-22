@@ -14,3 +14,6 @@ Workflow({ name: "rahu-catchup", args: { window: "$ARGUMENTS" } })
 Present the result as a scannable list: for each message — sender · subject ·
 1-line summary · the draft gist (already saved in Gmail). End with how many drafts
 are waiting for the user to review and send. Never auto-send.
+
+If Google tool calls fail, run `python3 .claude/memory/store.py doctor` and relay
+its findings instead of retrying blindly.
