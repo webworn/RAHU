@@ -1,35 +1,65 @@
 {
   "$comment": "RAHU — Dimension-style AI coworker, 100% Google ecosystem, no separate UI. Outputs land as Gmail drafts/labels, Calendar events, Google Tasks, and Google Docs. >>> REVIEW THIS FILE, then copy it to .claude/settings.json to activate. It is shipped as .example so nothing auto-grants permissions or registers hooks without your explicit opt-in. <<<",
 
-  "model": "claude-sonnet-4-6",
+  "model": "claude-sonnet-5",
 
   "$comment_model": "Default = Sonnet (good writing + reasoning). Per-task overrides live in each agent's frontmatter: Haiku for high-volume triage/extraction, Opus for deal/IC-memo deep reasoning. See README 'Model routing'.",
 
   "$comment_no_mcp_here": "The Google server is declared ONCE, in the repo-root .mcp.json — NOT here. `mcpServers` is not a settings.json key, so a copy here is silently ignored (or shadows .mcp.json); either way it drifts. A duplicate block used to live here and had already diverged, hardcoding Asia/Kolkata while .mcp.json honored ${WORKSPACE_MCP_DEFAULT_TIMEZONE:-UTC}. Set the timezone by exporting that variable.",
 
-  "$comment_alt_mcp": "Zero-setup alternative: the claude.ai-hosted Gmail / Google Calendar / Google Drive connectors need no OAuth app. They lack Google Tasks. NOTE: they also expose DIFFERENT tool names (mcp__claude_ai_Gmail__*), which the agents' tools: lists and the permissions below do NOT yet cover — see ROADMAP.",
+  "$comment_alt_mcp": "The claude.ai-hosted Gmail / Google Calendar / Google Drive connectors need no OAuth app and are now fully supported here: agents dual-grant both the self-hosted google-workspace tools (mcp__google-workspace__*) and the hosted ones (mcp__claude_ai_Gmail__*, mcp__claude_ai_Google_Calendar__*, mcp__claude_ai_Google_Drive__*). Remaining hosted-only limitations: no Google Tasks (action items fall back to a Doc checklist/draft instead of a real Task), no Doc update-in-place, and no send — hosted Gmail is draft-only by design.",
 
   "permissions": {
     "allow": [
       "Bash(python3 .claude/memory/store.py:*)",
-      "mcp__google-workspace__gmail_list_messages",
-      "mcp__google-workspace__gmail_get_message",
-      "mcp__google-workspace__gmail_modify_labels",
-      "mcp__google-workspace__gmail_create_draft",
-      "mcp__google-workspace__calendar_list_events",
-      "mcp__google-workspace__calendar_get_event",
-      "mcp__google-workspace__tasks_list",
-      "mcp__google-workspace__tasks_insert",
-      "mcp__google-workspace__docs_create",
-      "mcp__google-workspace__drive_search"
+
+      "mcp__google-workspace__search_gmail_messages",
+      "mcp__google-workspace__get_gmail_message_content",
+      "mcp__google-workspace__list_gmail_labels",
+      "mcp__google-workspace__modify_gmail_message_labels",
+      "mcp__google-workspace__draft_gmail_message",
+      "mcp__google-workspace__list_calendars",
+      "mcp__google-workspace__get_events",
+      "mcp__google-workspace__list_tasks",
+      "mcp__google-workspace__get_task",
+      "mcp__google-workspace__manage_task",
+      "mcp__google-workspace__create_doc",
+      "mcp__google-workspace__get_doc_content",
+      "mcp__google-workspace__modify_doc_text",
+      "mcp__google-workspace__search_docs",
+      "mcp__google-workspace__search_drive_files",
+      "mcp__google-workspace__get_drive_file_content",
+
+      "mcp__claude_ai_Gmail__search_threads",
+      "mcp__claude_ai_Gmail__get_message",
+      "mcp__claude_ai_Gmail__get_thread",
+      "mcp__claude_ai_Gmail__list_labels",
+      "mcp__claude_ai_Gmail__create_label",
+      "mcp__claude_ai_Gmail__label_message",
+      "mcp__claude_ai_Gmail__unlabel_message",
+      "mcp__claude_ai_Gmail__label_thread",
+      "mcp__claude_ai_Gmail__unlabel_thread",
+      "mcp__claude_ai_Gmail__create_draft",
+      "mcp__claude_ai_Gmail__list_drafts",
+
+      "mcp__claude_ai_Google_Calendar__list_calendars",
+      "mcp__claude_ai_Google_Calendar__list_events",
+      "mcp__claude_ai_Google_Calendar__search_events",
+      "mcp__claude_ai_Google_Calendar__get_event",
+
+      "mcp__claude_ai_Google_Drive__search_files",
+      "mcp__claude_ai_Google_Drive__read_file_content",
+      "mcp__claude_ai_Google_Drive__create_file"
     ],
     "ask": [
-      "mcp__google-workspace__gmail_send_message",
-      "mcp__google-workspace__calendar_create_event"
+      "mcp__google-workspace__send_gmail_message",
+      "mcp__google-workspace__manage_event",
+      "mcp__claude_ai_Google_Calendar__create_event",
+      "mcp__claude_ai_Google_Calendar__update_event"
     ],
     "deny": []
   },
-  "$comment_permissions": "SAFETY POSTURE: RAHU drafts, labels, and prepares — it never sends mail or creates calendar invites without a human OK (those two are in 'ask'). This mirrors Dimension's review-and-send default. Flip gmail_send_message into 'allow' only if you knowingly opt into true Inbox-Autopilot auto-send.",
+  "$comment_permissions": "SAFETY POSTURE: RAHU drafts, labels, and prepares — it never sends mail or writes calendar events without a human OK. Reads, label ops, task management, doc create/read/update/search, drive search/read/create, and draft creation (both connector families) are silent/allowed. The only send tool that exists anywhere, mcp__google-workspace__send_gmail_message, always asks — hosted Gmail has no send tool at all, so it is inherently draft-only. Calendar writes (mcp__google-workspace__manage_event, mcp__claude_ai_Google_Calendar__create_event / update_event) always ask too. This mirrors Dimension's review-and-send default. Flip send_gmail_message into 'allow' only if you knowingly opt into true Inbox-Autopilot auto-send.",
 
   "hooks": {
     "$comment_hooks": "Optional. Enable by copying into settings.json. SessionStart injects a compact memory digest so agents start context-aware for ~0 extra tokens. PreToolUse on send is a belt-and-suspenders guard.",
@@ -43,8 +73,8 @@
     ],
     "PreToolUse": [
       {
-        "$comment": "Regex matcher (not an exact name) so the send-latch fires for ANY Gmail send tool — the self-hosted workspace-mcp (gmail_send_message) AND the claude.ai-hosted Gmail connector (send_email / send_message), which is named differently. Case classes are explicit: Claude Code compiles this with JS RegExp, where a leading (?i) is a COMPILE ERROR that silently disables the latch entirely. Do not reintroduce it.",
-        "matcher": "([Gg]mail.*[Ss]end|send_email|send_message|gmail_send_message)",
+        "$comment": "Regex matcher (not an exact name) so the send-latch fires for ANY Gmail send tool. Its live target today is the self-hosted workspace-mcp tool mcp__google-workspace__send_gmail_message, caught by the [Ss]end.*[Mm]ail and [Gg]mail.*[Ss]end classes — the hosted claude.ai Gmail connector has NO send tool at all (draft-only), so there is nothing hosted-side for this guard to catch yet. The send_email / send_message alternates are belt-and-suspenders for future/other connectors that might use those literal names. Case classes are explicit: Claude Code compiles this with JS RegExp, where a leading (?i) is a COMPILE ERROR that silently disables the latch entirely. Do not reintroduce it.",
+        "matcher": "([Ss]end.*[Mm]ail|[Gg]mail.*[Ss]end|send_email|send_message)",
         "hooks": [
           { "type": "command", "command": "bash .claude/hooks/pre-send-guard.sh" }
         ]
