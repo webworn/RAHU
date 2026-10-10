@@ -107,8 +107,8 @@ const [draftResults, tasks] = await parallel([
     // no drafts-list tool, so that instruction was unexecutable theatre. Dedup is the
     // watermark + processed marker below, which are real.
     agent(`Autopilot draft: reply in the user's voice to Gmail id ${m.id} ("${m.subject}" from ${m.sender}).
-Voice profile, recalled once this pass: ${voiceFacts || '(none recalled — use a neutral, professional tone)'}
-Do NOT recall voice yourself; use exactly the profile given above. Save as a Gmail draft. Return {id, gist}.`,
+General voice profile, recalled once this pass: ${voiceFacts || '(none recalled — use a neutral, professional tone)'}
+Do NOT re-recall that general profile. DO run the per-recipient recalls from the draft-in-voice skill (voice/contact/thread with --query "${m.sender}") so the draft matches THIS audience. Save as a Gmail draft. Return {id, gist}.`,
       { agentType: 'voice-drafter', label: `draft:${m.sender}`, phase: 'Autopilot',
         schema: { type: 'object', properties: { id: { type: 'string' }, gist: { type: 'string' } }, required: ['id'] } })
   ).then(v => ({ ...v, ts: m.ts, id: m.id })))),

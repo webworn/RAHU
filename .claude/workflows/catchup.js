@@ -89,7 +89,7 @@ const settle = (p) => p.then(v => ({ ok: true, v }), e => ({ ok: false, e: Strin
 const results = await pipeline(
   msgs,
   (m) => settle(agent(
-    `Catch-Up draft: reply in the user's voice to Gmail id ${m.id} — "${m.subject}" from ${m.sender}. Context summary: "${m.summary}". Voice notes (already recalled for this pass — do NOT recall voice again): "${voiceFacts}". Save as a Gmail draft on the thread, return {id, gist}.`,
+    `Catch-Up draft: reply in the user's voice to Gmail id ${m.id} — "${m.subject}" from ${m.sender}. Context summary: "${m.summary}". General voice notes (already recalled for this pass — do NOT re-recall these): "${voiceFacts}". DO still run the per-recipient recalls from the draft-in-voice skill (voice/contact/thread with --query "${m.sender}") so greeting, formality and sign-off match THIS audience. Save as a Gmail draft on the thread, return {id, gist}.`,
     { agentType: 'voice-drafter', label: `draft:${m.sender}`, phase: 'Draft', schema: DRAFT_SCHEMA }
   )).then(r => ({ ...r, id: m.id, ts: m.ts }))
 )

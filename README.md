@@ -42,6 +42,13 @@ export USER_GOOGLE_EMAIL=you@your-domain.com
 export WORKSPACE_MCP_DEFAULT_TIMEZONE=Asia/Kolkata   # optional, defaults to UTC
 ```
 
+> **Publish the OAuth consent screen, or you'll re-login every week.** A client left in
+> *Testing* status expires its tokens 7 days after consent (Google's rule for any app
+> requesting Gmail/Calendar/Drive scopes). On the consent screen click **Publish app** →
+> Production — unverified is fine, it's your own personal client. On a Workspace domain,
+> pick the **Internal** user type instead: no Testing mode, no expiry. If RAHU suddenly
+> fails with `invalid_grant`, this is almost always why.
+
 This adds real Google Tasks, in-place Doc updates, and (always ask-gated) send.
 Every agent is wired for **both** families — see `TOOLNAMES.md`, the verified source of
 truth for every Google tool name RAHU uses.

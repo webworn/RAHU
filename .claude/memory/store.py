@@ -411,6 +411,11 @@ def cmd_doctor(a):
         chk(bool(os.environ.get(v)), f"${v}",
             f"export {v}=...   (Google Cloud Console → Credentials → OAuth desktop client)",
             workspace_gaps)
+    # Can't be checked locally — Google exposes no API for a client's publishing status —
+    # so warn unconditionally: a Testing-status client expires tokens every 7 days.
+    print("  · consent screen must be PUBLISHED (Production) or Internal — a client left in")
+    print("    Testing status expires its tokens 7 days after consent (weekly re-login,")
+    print("    surfaces as `invalid_grant`). Unverified Production is fine for a personal client.")
 
     print("\nSafety")
     settings = Path(__file__).resolve().parents[1] / "settings.json"
